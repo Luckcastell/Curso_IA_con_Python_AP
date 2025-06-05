@@ -1,0 +1,5 @@
+eliminar:
+    st.caption("Explora diferentes modelos de IA conversacional")
+
+en "mostrar_sideBar()" añadir:
+        st.markdown('ℹ️ **Soporta:** **imagen:** png, jpg, jpeg, svg, bmp, gif; **documento:** pdf, docx, txt, rtf; **codigo:** py, html, css, js, json, xml, csv, md; **datos:** xlsx, xls, csv.')

@@ -1,0 +1,7 @@
+https://chat.deepseek.com/a/chat/s/8506f1ca-5239-4131-8077-eda473be7ba6
+
+pip install streamlit
+pip install groq
+
+pip install pytesseract pdfminer.six python-docx pandas pillow
+pip install beautifulsoup4 requests
