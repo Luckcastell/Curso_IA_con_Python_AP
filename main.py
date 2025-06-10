@@ -323,6 +323,7 @@ def mostrar_sidebar():
         st.markdown('- **Documentos:** PDF, DOCX, TXT, RTF')
         st.markdown('- **Código:** PY, HTML, CSS, JS, JSON, XML, CSV, MD')
         st.markdown('- **Datos:** XLSX, XLS, CSV')
+        st.markdown('**By:** Luca Castelli')
     
     return modelo
 

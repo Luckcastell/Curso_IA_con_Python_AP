@@ -37,10 +37,59 @@ EXTENSIONES_PERMITIDAS = {
 
 # ==================== FUNCIONES PARA HISTORIAL DE CHATS ====================
 
+def generar_nombre_por_defecto(mensajes):
+    """Genera un nombre para el chat basado en un resumen de los primeros mensajes"""
+    try:
+        # Obtener los primeros 5 mensajes del usuario
+        mensajes_usuario = [m["content"] for m in mensajes if m["role"] == "user"][:5]
+        
+        # Crear un texto base combinando los mensajes
+        texto_completo = " ".join(mensajes_usuario)
+        
+        # Generar un resumen de máximo 6 palabras
+        palabras = texto_completo.split()[:6]
+        resumen = " ".join(palabras).lower()
+        
+        # Limpiar el texto para nombre de archivo
+        caracteres_permitidos = "abcdefghijklmnopqrstuvwxyz0123456789"
+        texto_limpio = "".join(c if c.lower() in caracteres_permitidos else "_" for c in resumen)
+        texto_limpio = texto_limpio.strip("_").replace("__", "_")
+        
+        # Si no hay contenido válido, usar 'chat'
+        if not texto_limpio or len(texto_limpio) < 3:
+            texto_limpio = "chat"
+        
+        # Buscar si ya existe un chat con ese nombre base
+        chats_existentes = [f for f in os.listdir(CHATS_DIR) if f.startswith(texto_limpio)]
+        numero = f"{len(chats_existentes):02d}"  # Formato 00, 01, etc.
+        
+        # Combinar con número de versión si hay chats existentes
+        if len(chats_existentes) > 0:
+            nombre_final = f"{texto_limpio}_{numero}"
+        else:
+            nombre_final = texto_limpio
+            
+        return nombre_final
+        
+    except Exception:
+        # Fallback con timestamp si hay algún error
+        return f"chat_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+
 def guardar_chat(nombre_chat, mensajes):
     """Guarda el chat actual en un archivo JSON"""
     try:
-        with open(os.path.join(CHATS_DIR, f"{nombre_chat}.json"), "w", encoding="utf-8") as f:
+        # Asegurarse de que el nombre no tenga caracteres inválidos
+        nombre_valido = "".join(c if c.isalnum() or c in " -_." else "_" for c in nombre_chat)
+        nombre_valido = nombre_valido.strip()
+        
+        if not nombre_valido:
+            nombre_valido = generar_nombre_por_defecto(mensajes)
+        
+        # Asegurarse de que la extensión sea .json
+        if not nombre_valido.lower().endswith('.json'):
+            nombre_valido += '.json'
+        
+        with open(os.path.join(CHATS_DIR, nombre_valido), "w", encoding="utf-8") as f:
             json.dump(mensajes, f, ensure_ascii=False, indent=2)
         return True
     except Exception as e:
@@ -86,7 +135,6 @@ def configurar_pagina():
         layout="wide"
     )
     st.title("💬 ChatBot con Historial de Chats")
-    st.caption("Sube archivos y habla con ellos. Tus conversaciones se guardarán automáticamente.")
 
 def crear_cliente_groq():
     try:
@@ -181,16 +229,25 @@ def mostrar_sidebar():
         col1, col2 = st.columns(2)
         with col1:
             if st.button("💾 Guardar chat", help="Guarda el chat actual"):
-                nombre_chat = st.text_input(
-                    "Nombre para este chat:",
-                    value=f"chat_{datetime.now().strftime('%Y%m%d_%H%M%S')}",
-                    key="nombre_chat_input"
-                )
-                if nombre_chat:
-                    if guardar_chat(nombre_chat, st.session_state.mensajes):
-                        st.success("Chat guardado correctamente")
-                        time.sleep(1)
-                        st.rerun()
+                if hasattr(st.session_state, 'mensajes') and st.session_state.mensajes:
+                    nombre_por_defecto = generar_nombre_por_defecto(st.session_state.mensajes)
+                    nombre_chat = st.text_input(
+                        "Nombre para este chat:",
+                        value=nombre_por_defecto,
+                        key="nombre_chat_input"
+                    )
+                    if nombre_chat:
+                        if guardar_chat(nombre_chat, st.session_state.mensajes):
+                            st.success("Chat guardado correctamente")
+                            # Iniciar nuevo chat después de guardar
+                            st.session_state.mensajes = [{
+                                "role": "assistant",
+                                "content": "¡Hola! Soy un asistente vistual y estoy para servirte.",
+                                "timestamp": datetime.now().isoformat()
+                            }]
+                            st.session_state.current_chat_name = None
+                            time.sleep(1)
+                            st.rerun()
         
         with col2:
             if chat_seleccionado and st.button("📂 Cargar chat", help="Carga el chat seleccionado"):
@@ -203,20 +260,62 @@ def mostrar_sidebar():
                     st.rerun()
         
         # Botones adicionales
-        if st.button("🧹 Nuevo chat", help="Comienza una nueva conversación"):
-            st.session_state.mensajes = [{
-                "role": "assistant",
-                "content": "¡Hola! Sube archivos y pregúntame sobre ellos.",
-                "timestamp": datetime.now().isoformat()
-            }]
-            st.session_state.current_chat_name = None
-            st.rerun()
-        
-        if chat_seleccionado and st.button("🗑️ Eliminar chat", type="secondary", help="Elimina el chat seleccionado"):
-            if eliminar_chat(chat_seleccionado):
-                st.success(f"Chat '{chat_seleccionado}' eliminado")
-                time.sleep(1)
+        col3, col4 = st.columns(2)
+        with col3:
+            if st.button("🧹 Nuevo chat", help="Comienza una nueva conversación"):
+                st.session_state.mensajes = [{
+                    "role": "assistant",
+                    "content": "¡Hola! Soy un asistente vistual y estoy para servirte.",
+                    "timestamp": datetime.now().isoformat()
+                }]
+                st.session_state.current_chat_name = None
                 st.rerun()
+        
+        with col4:
+            if chat_seleccionado and st.button("🗑️ Eliminar chat", type="secondary", help="Elimina el chat seleccionado"):
+                if eliminar_chat(chat_seleccionado):
+                    st.success(f"Chat '{chat_seleccionado}' eliminado")
+                    time.sleep(1)
+                    st.rerun()
+        
+        # Funciones de importar/exportar
+        st.divider()
+        st.subheader("🔄 Importar/Exportar")
+        
+        # Exportar chat actual
+        if hasattr(st.session_state, 'mensajes') and st.session_state.mensajes:
+            chat_json = json.dumps(st.session_state.mensajes, ensure_ascii=False, indent=2)
+            nombre_exportacion = f"{st.session_state.current_chat_name or 'chat_exportado'}.json"
+            st.download_button(
+                label="📤 Exportar chat actual",
+                data=chat_json,
+                file_name=nombre_exportacion,
+                mime="application/json",
+                help="Descarga el chat actual como archivo JSON"
+            )
+        
+        # Importar chat
+        uploaded_chat = st.file_uploader(
+            "📥 Importar chat (JSON)",
+            type=["json"],
+            accept_multiple_files=False,
+            help="Sube un archivo JSON previamente exportado"
+        )
+        
+        if uploaded_chat:
+            try:
+                mensajes = json.load(uploaded_chat)
+                if isinstance(mensajes, list) and all("role" in msg and "content" in msg for msg in mensajes):
+                    st.session_state.mensajes = mensajes
+                    nombre_archivo = uploaded_chat.name.replace(".json", "")
+                    st.session_state.current_chat_name = nombre_archivo
+                    st.success(f"Chat '{nombre_archivo}' importado correctamente")
+                    time.sleep(1)
+                    st.rerun()
+                else:
+                    st.error("El archivo no tiene el formato correcto")
+            except Exception as e:
+                st.error(f"Error al importar chat: {str(e)}")
         
         st.divider()
         st.markdown('ℹ️ **Formatos soportados:**')
@@ -224,6 +323,7 @@ def mostrar_sidebar():
         st.markdown('- **Documentos:** PDF, DOCX, TXT, RTF')
         st.markdown('- **Código:** PY, HTML, CSS, JS, JSON, XML, CSV, MD')
         st.markdown('- **Datos:** XLSX, XLS, CSV')
+        st.markdown('**By:** Luca Castelli')
     
     return modelo
 
@@ -231,20 +331,21 @@ def inicializar_estado_chat():
     if "mensajes" not in st.session_state:
         st.session_state.mensajes = [{
             "role": "assistant",
-            "content": "¡Hola! Sube archivos y pregúntame sobre ellos.",
+            "content": "¡Hola! Soy un asistente vistual y estoy para servirte.",
             "timestamp": datetime.now().isoformat()
         }]
     if "current_chat_name" not in st.session_state:
         st.session_state.current_chat_name = None
 
 def obtener_mensajes_previos():
-    for mensaje in st.session_state.mensajes:
-        with st.chat_message(mensaje["role"]):
-            st.markdown(mensaje["content"])
-            if "archivos" in mensaje and mensaje["archivos"]:
-                st.caption(f"Archivos adjuntos: {', '.join(mensaje['archivos'])}")
-            if "timestamp" in mensaje:
-                st.caption(f"{datetime.fromisoformat(mensaje['timestamp']).strftime('%H:%M')}")
+    if hasattr(st.session_state, 'mensajes'):
+        for mensaje in st.session_state.mensajes:
+            with st.chat_message(mensaje["role"]):
+                st.markdown(mensaje["content"])
+                if "archivos" in mensaje and mensaje["archivos"]:
+                    st.caption(f"Archivos adjuntos: {', '.join(mensaje['archivos'])}")
+                if "timestamp" in mensaje:
+                    st.caption(f"{datetime.fromisoformat(mensaje['timestamp']).strftime('%H:%M')}")
 
 def obtener_respuesta_modelo(cliente, modelo, mensajes):
     try:
@@ -264,17 +365,21 @@ def obtener_respuesta_modelo(cliente, modelo, mensajes):
 
 def autoguardar_chat():
     """Guarda automáticamente el chat si tiene suficientes mensajes"""
-    if "mensajes" in st.session_state and len(st.session_state.mensajes) > 2:
-        if "current_chat_name" not in st.session_state or not st.session_state.current_chat_name:
-            st.session_state.current_chat_name = f"chat_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+    if hasattr(st.session_state, 'mensajes') and len(st.session_state.mensajes) > 2:
+        if not hasattr(st.session_state, 'current_chat_name') or not st.session_state.current_chat_name:
+            st.session_state.current_chat_name = generar_nombre_por_defecto(st.session_state.mensajes)
         guardar_chat(st.session_state.current_chat_name, st.session_state.mensajes)
 
 def ejecutar_chat():
+    # 1. Inicializar estado del chat (PRIMERO)
+    inicializar_estado_chat()
+    
+    # 2. Configurar página y cliente
     configurar_pagina()
     cliente = crear_cliente_groq()
-    modelo = mostrar_sidebar()
     
-    inicializar_estado_chat()
+    # 3. Mostrar sidebar (que ahora puede acceder a mensajes con seguridad)
+    modelo = mostrar_sidebar()
     
     # Widget para subir archivos
     uploaded_files = st.file_uploader(
